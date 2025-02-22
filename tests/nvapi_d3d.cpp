@@ -1,12 +1,15 @@
 #include "nvapi_tests_private.h"
 #include "mocks/d3d_mocks.h"
 #include "mocks/d3d11_mocks.h"
+#include "mocks/d3d9_mocks.h"
 #include "nvapi/resource_factory_util.h"
 
 using namespace trompeloeil;
 
 TEST_CASE("D3D methods succeed", "[.d3d]") {
     UnknownMock unknown;
+    ALLOW_CALL(unknown, QueryInterface(__uuidof(IDirect3DDevice9), _))
+        .RETURN(E_NOINTERFACE);
 
     SECTION("RegisterDevice returns OK") {
         REQUIRE(NvAPI_D3D_RegisterDevice(&unknown) == NVAPI_OK);
@@ -35,17 +38,48 @@ TEST_CASE("D3D methods succeed", "[.d3d]") {
     }
 
     SECTION("GetCurrentSLIState succeeds") {
-        SECTION("GetCurrentSLIState (V1) returns NO_ACTIVE_SLI_TOPOLOGY") {
+        SECTION("GetCurrentSLIState (V1) returns OK") {
             NV_GET_CURRENT_SLI_STATE_V1 state;
             state.version = NV_GET_CURRENT_SLI_STATE_VER1;
-            REQUIRE(NvAPI_D3D_GetCurrentSLIState(&unknown, reinterpret_cast<NV_GET_CURRENT_SLI_STATE*>(&state)) == NVAPI_NO_ACTIVE_SLI_TOPOLOGY);
+            REQUIRE(NvAPI_D3D_GetCurrentSLIState(&unknown, reinterpret_cast<NV_GET_CURRENT_SLI_STATE*>(&state)) == NVAPI_OK);
+            REQUIRE(state.maxNumAFRGroups == 1);
+            REQUIRE(state.numAFRGroups == 1);
+            REQUIRE(state.currentAFRIndex == 0);
+            REQUIRE(state.nextFrameAFRIndex == 0);
+            REQUIRE(state.previousFrameAFRIndex == 0);
+            REQUIRE(state.bIsCurAFRGroupNew == false);
         }
 
-        SECTION("GetCurrentSLIState (V2) returns NO_ACTIVE_SLI_TOPOLOGY") {
+        SECTION("GetCurrentSLIState (V2) returns OK") {
+            NV_GET_CURRENT_SLI_STATE_V2 state;
+
+            state.version = NV_GET_CURRENT_SLI_STATE_VER2;
+            REQUIRE(NvAPI_D3D_GetCurrentSLIState(&unknown, &state) == NVAPI_OK);
+            REQUIRE(state.maxNumAFRGroups == 1);
+            REQUIRE(state.numAFRGroups == 1);
+            REQUIRE(state.currentAFRIndex == 0);
+            REQUIRE(state.nextFrameAFRIndex == 0);
+            REQUIRE(state.previousFrameAFRIndex == 0);
+            REQUIRE(state.bIsCurAFRGroupNew == false);
+            REQUIRE(state.numVRSLIGpus == 0);
+        }
+
+        D3D9DeviceMock d3d9Device;
+        ALLOW_CALL(d3d9Device, QueryInterface(__uuidof(IDirect3DDevice9), _))
+            .RETURN(S_OK);
+
+        SECTION("GetCurrentSLIState (V1) returns NO_ACTIVE_SLI_TOPOLOGY for D3D9") {
+
+            NV_GET_CURRENT_SLI_STATE_V1 state;
+            state.version = NV_GET_CURRENT_SLI_STATE_VER1;
+            REQUIRE(NvAPI_D3D_GetCurrentSLIState(&d3d9Device, reinterpret_cast<NV_GET_CURRENT_SLI_STATE*>(&state)) == NVAPI_NO_ACTIVE_SLI_TOPOLOGY);
+        }
+
+        SECTION("GetCurrentSLIState (V2) returns NO_ACTIVE_SLI_TOPOLOGY for D3D9") {
             NV_GET_CURRENT_SLI_STATE_V2 state;
             state.numVRSLIGpus = 0xdeadbeef;
             state.version = NV_GET_CURRENT_SLI_STATE_VER2;
-            REQUIRE(NvAPI_D3D_GetCurrentSLIState(&unknown, &state) == NVAPI_NO_ACTIVE_SLI_TOPOLOGY);
+            REQUIRE(NvAPI_D3D_GetCurrentSLIState(&d3d9Device, &state) == NVAPI_NO_ACTIVE_SLI_TOPOLOGY);
             REQUIRE(state.numVRSLIGpus == 0);
         }
 

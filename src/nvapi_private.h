@@ -34,6 +34,7 @@
 
 #include <dxgi1_6.h>
 #include <d3d11_1.h>
+#include <d3d9.h>
 #ifdef _MSC_VER
 #include <d3d12.h>
 #else

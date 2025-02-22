@@ -65,6 +65,7 @@ extern "C" {
 
     NvAPI_Status __cdecl NvAPI_D3D_GetCurrentSLIState(IUnknown* pDevice, NV_GET_CURRENT_SLI_STATE* pSliState) {
         constexpr auto n = __func__;
+        thread_local bool alreadyLoggedOk = false;
         thread_local bool alreadyLoggedNoSli = false;
 
         if (log::tracing())
@@ -73,17 +74,46 @@ extern "C" {
         if (!pDevice || !pSliState)
             return InvalidArgument(n);
 
-        if (pSliState->version >= NV_GET_CURRENT_SLI_STATE_VER2) {
-            // For some reason this is the only field that gets initialized.
-            pSliState->numVRSLIGpus = 0;
-        }
-
         if (pSliState->version > NV_GET_CURRENT_SLI_STATE_VER2)
             return IncompatibleStructVersion(n, pSliState->version);
 
         // The docs don't list NVAPI_NO_ACTIVE_SLI_TOPOLOGY as a return value,
         // but testing on Windows yielded this exact status.
-        return NoActiveSliTopology(n, alreadyLoggedNoSli);
+        // It only returns that for D3D9 devices though.
+        void* unused = nullptr;
+        if (pDevice->QueryInterface(__uuidof(IDirect3DDevice9), &unused) == S_OK) {
+            if (pSliState->version == NV_GET_CURRENT_SLI_STATE_VER2) {
+                // Tests on Windows show that this is the only field that gets initialized in this case.
+                pSliState->numVRSLIGpus = 0;
+            }
+            return NoActiveSliTopology(n, alreadyLoggedNoSli);
+        }
+
+        switch (pSliState->version) {
+            case NV_GET_CURRENT_SLI_STATE_VER1: {
+                auto pSliStateV1 = reinterpret_cast<NV_GET_CURRENT_SLI_STATE_V1*>(pSliState);
+                // Report that SLI is not available
+                pSliStateV1->maxNumAFRGroups = 1;
+                pSliStateV1->numAFRGroups = 1;
+                pSliStateV1->currentAFRIndex = 0;
+                pSliStateV1->nextFrameAFRIndex = 0;
+                pSliStateV1->previousFrameAFRIndex = 0;
+                pSliStateV1->bIsCurAFRGroupNew = false;
+                break;
+            }
+            case NV_GET_CURRENT_SLI_STATE_VER2:
+                // Report that SLI is not available
+                pSliState->maxNumAFRGroups = 1;
+                pSliState->numAFRGroups = 1;
+                pSliState->currentAFRIndex = 0;
+                pSliState->nextFrameAFRIndex = 0;
+                pSliState->previousFrameAFRIndex = 0;
+                pSliState->bIsCurAFRGroupNew = false;
+                pSliState->numVRSLIGpus = 0;
+                break;
+        }
+
+        return Ok(n, alreadyLoggedOk);
     }
 
     NvAPI_Status __cdecl NvAPI_D3D_ImplicitSLIControl(IMPLICIT_SLI_CONTROL implicitSLIControl) {
